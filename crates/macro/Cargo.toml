@@ -11,5 +11,5 @@ readme        = "../../README.md"
 proc-macro = true
 
 [dependencies]
-ligen = "0.1"
+ligen = { path = "../../../ligen/crates/main" }
 ligen-cpp-core = { path = "../core" }

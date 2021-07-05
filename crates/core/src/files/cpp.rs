@@ -16,7 +16,7 @@ pub struct FunctionProcessor;
 pub struct ParameterProcessor;
 
 fn path(implementation: &ImplementationVisitor) -> PathBuf {
-    PathBuf::from("src").join(format!("{}.cpp", implementation.current.self_.name))
+    PathBuf::from("src").join(format!("{}.cpp", implementation.current.self_.path().last().name))
 }
 
 impl FileProcessorVisitor for ImplementationProcessor {
@@ -24,7 +24,7 @@ impl FileProcessorVisitor for ImplementationProcessor {
 
     fn process(&self, _context: &Context, file_set: &mut FileSet, visitor: &Self::Visitor) {
         let file = file_set.entry(&path(&visitor));
-        let name = &visitor.current.self_.name;
+        let name = &visitor.current.self_.path().last().name;
         let name_lower = name.to_lowercase();
         // includes
         file.writeln(format!("#include <{}.hpp>", name));
@@ -45,7 +45,7 @@ impl FileProcessorVisitor for ImplementationProcessor {
 impl FunctionProcessor {
     /// Generate function name.
     pub fn generate_function_name(&self, visitor: &FunctionVisitor) -> String {
-        let object_name = &visitor.parent.current.self_.name;
+        let object_name = &visitor.parent.current.self_.path().last().name;
         let function_name = &visitor.current.identifier.name;
         format!("{}::{}", object_name, function_name)
     }
@@ -77,7 +77,7 @@ impl FileProcessorVisitor for FunctionProcessor {
         if let ir::Visibility::Public = visitor.current.visibility {
             let file = file_set.entry(&path(&visitor.parent));
             if visitor.current.identifier.name == "new" {
-                let name = &visitor.parent.current.self_.name;
+                let name = &visitor.parent.current.self_.path().last().name;
                 file.write(format!("{name}::{name}", name = name));
             } else {
                 file.write(self.generate_function_output(&visitor.current.output));
@@ -89,28 +89,21 @@ impl FileProcessorVisitor for FunctionProcessor {
 
     fn post_process(&self, _context: &Context, file_set: &mut FileSet, visitor: &Self::Visitor) {
         if let ir::Visibility::Public = visitor.current.visibility {
-            let object_name = &visitor.parent.current.self_.name;
+            let object_name = &visitor.parent.current.self_.path().last().name;
             let function_name = &visitor.current.identifier.name;
             let arguments = visitor
                 .current
                 .inputs
                 .iter()
                 .cloned()
-                .map(|input| input.identifier.name)
-                .map(|input| {
-                    if *input == object_name.to_lowercase() {
-                        "*this".into()
-                    } else {
-                        input
-                    }
-                })
+                .map(|input| input.identifier.name.replace("self", "*this"))
                 .collect::<Vec<String>>()
                 .join(", ");
             let file = file_set.entry(&path(&visitor.parent));
             if visitor.current.identifier.name == "new" {
                 file.write(format!(") : {}(", object_name));
                 file.write(format!("{}_{}({})", object_name, function_name, arguments));
-                file.writeln(") {");
+                file.write(") {");
             } else {
                 file.writeln(") {");
                 file.write("\t");
@@ -128,9 +121,7 @@ impl FileProcessorVisitor for ParameterProcessor {
     type Visitor = ParameterVisitor;
 
     fn process(&self, _context: &Context, file_set: &mut FileSet, visitor: &Self::Visitor) {
-        let object_name = &visitor.parent.parent.current.self_.name;
-        // FIXME: Find a better way to identify if the function is a method.
-        if visitor.current.identifier.name != object_name.to_lowercase() {
+        if visitor.current.identifier.name != "self" {
             let file = file_set.entry(&path(&visitor.parent.parent));
 
             let mut type_ = Type::from(visitor.current.type_.clone());
@@ -143,9 +134,7 @@ impl FileProcessorVisitor for ParameterProcessor {
     }
 
     fn post_process(&self, _context: &Context, file_set: &mut FileSet, visitor: &Self::Visitor) {
-        let object_name = &visitor.parent.parent.current.self_.name;
-        // FIXME: Find a better way to identify if the function is a method.
-        if visitor.current.identifier.name != object_name.to_lowercase() {
+        if visitor.current.identifier.name != "self" {
             let file = file_set.entry(&path(&visitor.parent.parent));
             file.write(", ");
         }

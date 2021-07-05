@@ -39,4 +39,4 @@ impl Person {
 }
 
 ligen_dependencies!(c, cpp);
-ligen_cmake!(c, cpp);
+ligen_cmake!(cpp);

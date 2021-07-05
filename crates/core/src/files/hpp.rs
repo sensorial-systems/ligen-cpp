@@ -1,8 +1,7 @@
-use ligen::generator::{ImplementationVisitor, FileProcessorVisitor, Context, FileSet, FunctionVisitor, ParameterVisitor, FileGeneratorVisitors};
+use ligen::generator::{ImplementationVisitor, FileProcessorVisitor, Context, FileSet, FunctionVisitor, ParameterVisitor};
 use ligen::ir;
 use std::path::PathBuf;
 use ligen_c::ast::{Types, Type};
-use crate::Generator;
 
 /// Implementation processor.
 #[derive(Default, Clone, Copy, Debug)]
@@ -17,7 +16,7 @@ pub struct FunctionProcessor;
 pub struct ParameterProcessor;
 
 fn path(implementation: &ImplementationVisitor) -> PathBuf {
-    PathBuf::from("include").join(format!("{}.hpp", implementation.current.self_.name))
+    PathBuf::from("include").join(format!("{}.hpp", implementation.current.self_.path().last().name))
 }
 
 impl FileProcessorVisitor for ImplementationProcessor {
@@ -25,15 +24,20 @@ impl FileProcessorVisitor for ImplementationProcessor {
 
     fn process(&self, _context: &Context, file_set: &mut FileSet, visitor: &Self::Visitor) {
         let file = file_set.entry(&path(&visitor));
+        let name = &visitor.current.self_.path().last().name;
         // includes
         file.writeln("#pragma once");
         file.writeln("");
+        file.writeln("#include <RString.hpp>");
         file.writeln("#include <stdint.h>");
-        file.writeln(format!("#include <{}.h>", visitor.current.self_.name));
+        file.writeln(format!("#include <{}.h>", name));
         file.writeln("");
 
         // class
-        file.writeln(format!("class {name}: public C{name} {{", name = visitor.current.self_.name));
+        file.writeln(format!("class {name}: public C{name} {{", name = name));
+        file.writeln("public:");
+        file.writeln(format!("\t~{}();", name));
+        file.writeln(format!("\t{name}(C{name} {name_lower});", name = name, name_lower = name.to_lowercase()));
     }
 
     fn post_process(&self, _context: &Context, file_set: &mut FileSet, visitor: &Self::Visitor) {
@@ -46,8 +50,7 @@ impl FileProcessorVisitor for ImplementationProcessor {
 impl FunctionProcessor {
     /// Generate function name.
     pub fn generate_function_name(&self, visitor: &FunctionVisitor) -> String {
-        // FIXME: This naming convention happens in the extern generator and here. How can we generalize this code?
-        format!("{}_{}", &visitor.parent.current.self_.name, &visitor.current.identifier.name)
+        visitor.current.identifier.name.clone()
     }
 
     /// Generate function output.
@@ -76,8 +79,16 @@ impl FileProcessorVisitor for FunctionProcessor {
     fn process(&self, _context: &Context, file_set: &mut FileSet, visitor: &Self::Visitor) {
         if let ir::Visibility::Public = visitor.current.visibility {
             let file = file_set.entry(&path(&visitor.parent));
-            file.write(self.generate_function_output(&visitor.current.output));
-            file.write(self.generate_function_name(&visitor));
+            file.write("\t");
+            if visitor.current.identifier.name == "new" {
+                file.write(&visitor.parent.current.self_.path().last().name);
+            } else {
+                if !visitor.is_method() {
+                    file.write("static ");
+                }
+                file.write(self.generate_function_output(&visitor.current.output));
+                file.write(self.generate_function_name(&visitor));
+            }
             file.write("(");
         }
     }
@@ -94,24 +105,22 @@ impl FileProcessorVisitor for ParameterProcessor {
     type Visitor = ParameterVisitor;
 
     fn process(&self, _context: &Context, file_set: &mut FileSet, visitor: &Self::Visitor) {
-        let file = file_set.entry(&path(&visitor.parent.parent));
+        if visitor.current.identifier.name != "self" {
+            let file = file_set.entry(&path(&visitor.parent.parent));
 
-        let mut type_ = Type::from(visitor.current.type_.clone());
-        if let (Some(_pointer), Types::Compound(_type)) = (&type_.pointer, &type_.type_) {
-            type_.pointer = None;
+            let mut type_ = Type::from(visitor.current.type_.clone());
+            if let (Some(_pointer), Types::Compound(_type)) = (&type_.pointer, &type_.type_) {
+                type_.pointer = None;
+            }
+            let ident = &visitor.current.identifier.name;
+            file.write(format!("{} {}", type_, ident))
         }
-        let ident = &visitor.current.identifier.name;
-        file.write(format!("{} {}", type_, ident))
     }
 
     fn post_process(&self, _context: &Context, file_set: &mut FileSet, visitor: &Self::Visitor) {
-        let file = file_set.entry(&path(&visitor.parent.parent));
-        file.write(", ");
+        if visitor.current.identifier.name != "self" {
+            let file = file_set.entry(&path(&visitor.parent.parent));
+            file.write(", ");
+        }
     }
-}
-
-impl FileGeneratorVisitors for Generator {
-    type ImplementationProcessor = ImplementationProcessor;
-    type FunctionProcessor = FunctionProcessor;
-    type ParameterProcessor = ParameterProcessor;
 }

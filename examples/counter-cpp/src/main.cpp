@@ -1,6 +1,7 @@
 #include <Counter.hpp>
 #include <RString.hpp>
 #include <Person.hpp>
+#include <Panic.hpp>
 
 #include <iostream>
 #include <assert.h>
